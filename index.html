@@ -123,7 +123,7 @@ textarea{min-height:120px;resize:vertical}
 <div class="tabs"><nav id="tabs" aria-label="Main"></nav></div>
 <script>
 (function(){
-const KEY="counts.v2";
+const KEY="counts.v3";
 const SKILLS=["Communication","Problem solving","Conflict resolution","Teamwork","Leadership","Time management","Customer service","Attention to detail","Adaptability","Training others","Technical skills","Responsibility"];
 const FIELD_NEEDS={
   "Engineering":["Problem solving","Technical skills","Teamwork","Attention to detail","Communication"],
@@ -144,6 +144,7 @@ const RESOURCES=[
   {id:"orgs",name:"Student organizations",org:"Sun Devil Central",who:"All ASU students",what:"Take a role in a club or team project.",skills:["Teamwork","Leadership","Conflict resolution","Training others","Adaptability"],url:null},
   {id:"changemaker",name:"Changemaker Central",org:"ASU",who:"All ASU students",what:"Community service and social impact projects you can join or lead.",skills:["Leadership","Responsibility","Adaptability","Teamwork"],url:null}
 ];
+const CLASS_PROMPTS=["What was the hardest part of a class, lab, or project this week?","You worked in a group. What did you do when it got stuck?","What did you explain to a classmate, or figure out on your own?","What did you learn in class that you could use outside it?","What part of an assignment are you proud of? What exactly did you do?","What did you have to redo or fix, and how?"];
 const PROMPTS=["What was the hardest moment of this shift?","Did anyone need help today that only you could give?","What went wrong, and what did you do about it?","What did you do today that a new hire couldn't?","Who did you have to calm down, convince, or explain something to?","What did you juggle today?"];
 const UNPAID=[
   {id:"care",q:"Do you take care of someone? A sibling, parent, grandparent.",hint:"What does a normal week of that look like?"},
@@ -172,7 +173,8 @@ function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.is
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function uid(){return Math.random().toString(36).slice(2,10);}
-function todayPrompt(){const d=new Date();return PROMPTS[(d.getDate()+state.stories.length)%PROMPTS.length];}
+function todayPrompt(m){const L=(m||"shift")==="class"?CLASS_PROMPTS:PROMPTS;const d=new Date();return L[(d.getDate()+state.stories.length)%L.length];}
+function majorLabel(){const p=state.profile||{};return p.major||p.field||"your major";}
 function fmtDate(t){return new Date(t).toLocaleDateString(undefined,{month:"short",day:"numeric"});}
 function works(){return state.profile&&state.profile.work!=="none";}
 function eligible(r){return !r.requires||(state.profile&&state.profile.work==="campus");}
@@ -185,14 +187,25 @@ const RULES=[
   [/(explain|told|convinc|talk|call|email|translat)/i,"Communication"],
   [/(fix|figur|solv|broke|problem|wrong|issue|jam)/i,"Problem solving"],
   [/(train|showed (her|him|them)|new hire|taught|teach)/i,"Training others"],
-  [/(team|cowork|together|covered|shift lead)/i,"Teamwork"],
+  [/(team|cowork|together|covered|shift lead|group|partner)/i,"Teamwork"],
   [/(rush|busy|juggl|same time|deadline|multiple)/i,"Time management"],
   [/(count|check|inventory|cash|register|accura|detail|form)/i,"Attention to detail"],
   [/(changed|last minute|short.?staffed|instead|adapt|called out)/i,"Adaptability"],
   [/(led|lead|in charge|decid|organiz|captain)/i,"Leadership"],
-  [/(software|system|computer|excel|code|machine|pos|printer)/i,"Technical skills"],
+  [/(software|system|computer|excel|code|machine|pos|printer|lab|pipette|data|analy)/i,"Technical skills"],
   [/(open|clos|trusted|responsib|keys|alone|take care|bills)/i,"Responsibility"]
 ];
+const COMMON=new Set("about actually already another anything because been before being better between called classes coming complete completely consider could couldn customer customers decided details different doing during either enough especially even every everyone everything explain explained figure figured finally finished first following friend getting going group happened having helped helping himself however instead into itself little looked making manager managers maybe might morning mostly myself needed never nothing number often other others people person pretty probably problem problems really right same section semester should shouldn showed since someone something sometimes started still students supposed sure their themselves there they thing things think though through together tomorrow tonight took toward trying turned until using usually wanted watched week weekend weren what when where whether which while whole without working would wouldn yesterday your".split(" "));
+function findTerms(text){
+  const out=[];
+  (text.match(/\b[A-Za-z][A-Za-z0-9-]*\b/g)||[]).forEach(w=>{
+    const low=w.toLowerCase();
+    const acronym=/^[A-Z0-9]{2,6}$/.test(w)&&!["I","A","OK","AM","PM","TV"].includes(w);
+    const longword=low.length>=9&&!COMMON.has(low)&&/^[a-z][a-z-]+$/.test(low);
+    if((acronym||longword)&&!out.some(t=>t.toLowerCase()===low)&&out.length<4)out.push(acronym?w:low);
+  });
+  return out;
+}
 function fallbackTranslate(text){
   const sentences=text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
   const found=[];
@@ -201,27 +214,33 @@ function fallbackTranslate(text){
     const hit=sentences.find(s=>re.test(s));
     if(hit&&!found.some(f=>f.name===name))found.push({name,quote:hit.length>140?hit.slice(0,137)+"...":hit});
   }
-  if(!found.length)found.push({name:"Responsibility",quote:sentences[0]||text});
-  return{skills:found,resumeLine:"Draft line, edit before using. Showed "+found.map(f=>f.name.toLowerCase()).join(", ")+" in a real situation (see my own words).",interviewStory:"Start with what you said, \""+(sentences[0]||text)+"\" Then say what you did next and how it ended.",engine:"offline"};
+  const terms=findTerms(text);
+  if(!found.length)found.push({name:terms.length?"Technical skills":"Responsibility",quote:sentences[0]||text});
+  const first=(sentences[0]||text).replace(/^i /i,"").trim();
+  const line=first.charAt(0).toUpperCase()+first.slice(1).replace(/[.]+$/,"")+".";
+  return{skills:found,terms,resumeLine:line,interviewStory:"Say what you said, \""+(sentences[0]||text)+"\" Then add what you did step by step and how it turned out.",engine:"offline"};
 }
 async function translate(text,source){
   const field=(state.profile&&state.profile.field)||"Not sure yet";
   if(sampleFn){
     try{
       const out=await sampleFn.json(
-`You help a college student name the skills in their own words. Source type is "${source}". Their target field is "${field}".
+`You help a college student name the skills in their own words. Source type is "${source}". Their major is "${(state.profile&&state.profile.major)||"undeclared"}" and their target career area is "${field}".
 Rules you must follow.
 1. Never invent facts, numbers, outcomes, or job titles that are not in their words.
 2. Pick 1 to 3 skills ONLY from this list: ${SKILLS.join(", ")}.
 3. For each skill give an exact quote copied from their words that shows it (max 25 words).
-4. resumeLine is one line in plain professional English built only from what they said. No numbers unless they said them.
+4. resumeLine is one line in plain professional English built only from what they said. No numbers unless they said them. If they named a specific technique, tool, method, software, lab procedure or system, keep that exact term in the line.
+4b. terms is a list of the specific techniques, tools, methods, software, lab procedures, systems or equipment they named, copied exactly, up to 4. Empty list if they named none. Never add one they did not say.
 5. interviewStory is 3 to 4 sentences in first person, using their phrasing where possible, situation then action then result. If they did not say a result, end with "[add how it turned out]".
-Return JSON only: {"skills":[{"name":"","quote":""}],"resumeLine":"","interviewStory":""}
+Return JSON only: {"skills":[{"name":"","quote":""}],"terms":[],"resumeLine":"","interviewStory":""}
 
 Their words:
 """${text}"""`,{modelTier:"quick"});
       if(out&&Array.isArray(out.skills)){
         out.skills=out.skills.filter(s=>SKILLS.includes(s.name)).slice(0,3);
+        out.terms=(Array.isArray(out.terms)?out.terms:[]).filter(t=>typeof t==="string"&&text.toLowerCase().includes(t.toLowerCase().split(" ")[0])).slice(0,4);
+        if(out.terms.length&&!out.skills.some(s=>s.name==="Technical skills")&&out.skills.length<3)out.skills.push({name:"Technical skills",quote:out.terms.join(", ")});
         if(out.skills.length){out.engine="claude";return out;}
       }
     }catch(e){if(e&&e.code==="not_granted")sampleFn=null;}
@@ -252,8 +271,9 @@ function resCard(r,skill){
 const V={};
 V.welcome=()=>`
   <div class="top"><div class="brand"><span class="tallyLogo"><i></i><i></i><i></i><i></i></span>Counts</div></div>
-  <h1>The work you already do counts.</h1>
-  <p class="muted">You'll set this up in your intro class. Then one question at a time, you build a bank of real stories in your own words, and Counts points you to the ASU resources that fill your gaps.</p>
+  <h1>What you already do counts.</h1>
+  <p class="muted">Your classes, your job, your life. Counts asks one short question right after it happens, keeps your answer in your own words, and shows you the skills inside it. When a skill is missing for your major, it points you to the ASU resource that builds it.</p>
+  <div class="chips" aria-label="What counts"><span class="skillTag">Learning</span><span class="skillTag">Work</span><span class="skillTag">Life</span></div>
   <div class="panel">
     <label for="pc">Class code from your intro class</label><input id="pc" placeholder="e.g. ASU101-FALL" value="ASU101-FALL">
     <p class="small muted">Any first year intro course, in person or online. Your instructor only ever sees class totals, never your stories.</p>
@@ -265,7 +285,8 @@ V.welcome=()=>`
       <button class="btn ghost" data-work="off" aria-pressed="false">Off campus job</button>
     </div>
     <div id="jobWrap" hidden><label for="pj">Where?</label><input id="pj" placeholder="e.g. Library front desk, Target, family restaurant"></div>
-    <label for="pf">What field are you aiming for?</label>
+    <label for="pm">Your major</label><input id="pm" placeholder="e.g. Biomedical Engineering, or undecided">
+    <label for="pf">Closest career area</label>
     <select id="pf">${Object.keys(FIELD_NEEDS).map(f=>`<option>${f}</option>`).join("")}</select>
     <div class="toggle"><input type="checkbox" id="share" checked><label for="share" style="margin:0;font-weight:400">Add my skill counts to my class totals. Counts only, never my words.</label></div>
     <div style="margin-top:18px" class="row">
@@ -277,29 +298,31 @@ V.welcome=()=>`
 
 V.home=()=>{
   const p=state.profile,c=skillCounts(),total=state.stories.length,sorted=Object.keys(c).sort((a,b)=>c[b]-c[a]),g=gaps();
-  const hero=works()?`
-  <section class="hero">
-    <p class="muted small">Shift just ended, ${esc(p.name)}?</p>
-    <p class="prompt">${esc(todayPrompt())}</p>
-    <button class="btn gold" data-go="catch">Answer in 60 seconds</button>
-  </section>
-  <p class="small muted" style="margin:10px 2px">You'll get this question after each shift at ${esc(p.job)}. <button class="switch" data-act="push">Preview the reminder</button></p>
-  ${tmp.push?`<button class="pushcard" data-go="catch"><span class="pushicon"><span class="tallyLogo" style="height:16px"><i style="background:#fff"></i><i style="background:#fff"></i><i style="background:#fff"></i></span></span><span><b>Counts</b><br><span class="small">Shift done? ${esc(todayPrompt())} Tap to answer out loud.</span></span></button>`:""}`:
-  `<section class="hero">
-    <p class="muted small">Welcome, ${esc(p.name)}. No job yet? You still have experience.</p>
-    <p class="prompt">Start with the work nobody calls work.</p>
-    <button class="btn gold" data-go="unpaid">Does this count?</button>
-  </section>
-  <p class="small muted" style="margin:10px 2px">When you start a job, switch on shift questions. <button class="switch" data-act="gotjob">I have a job now</button></p>`;
+  const mode=tmp.homeMode||"class";
+  const pushText=mode==="shift"?"Shift done?":"Class done?";
+  const hero=`
+  <div class="seg" style="margin-bottom:10px"><button class="btn ghost" data-home="class" aria-pressed="${mode==="class"}">After class</button><button class="btn ghost" data-home="shift" aria-pressed="${mode==="shift"}">After a shift</button></div>
+  ${mode==="shift"&&!works()?`<section class="hero">
+    <p class="muted small">No job yet, ${esc(p.name)}? That's fine.</p>
+    <p class="prompt">When you start working, you'll get one question after every shift.</p>
+    <button class="btn gold" data-act="gotjob">I have a job now</button>
+  </section>`:`<section class="hero">
+    <p class="muted small">${mode==="shift"?`Shift just ended, ${esc(p.name)}?`:`Just got out of class, ${esc(p.name)}?`}</p>
+    <p class="prompt">${esc(todayPrompt(mode))}</p>
+    <button class="btn gold" data-catch="${mode}">Answer in 60 seconds</button>
+  </section>`}
+  <p class="small muted" style="margin:10px 2px">${mode==="shift"?`You'll get this question after each shift at ${esc(p.job)}.`:`You'll get one question after class, a lab, or a project deadline.`} <button class="switch" data-act="push">Preview the reminder</button></p>
+  ${tmp.push?`<button class="pushcard" data-catch="${mode}"><span class="pushicon"><span class="tallyLogo" style="height:16px"><i style="background:#fff"></i><i style="background:#fff"></i><i style="background:#fff"></i></span></span><span><b>Counts</b><br><span class="small">${pushText} ${esc(todayPrompt(mode))} Tap to answer out loud.</span></span></button>`:""}
+  ${works()?"":`<p class="small muted" style="margin:10px 2px">Start a job later? <button class="switch" data-act="gotjob">Turn on shift questions</button></p>`}`;
   return `
-  <div class="top"><div class="brand"><span class="tallyLogo"><i></i><i></i><i></i><i></i></span>Counts</div><span class="muted small">${esc(p.cls||"")}</span></div>
+  <div class="top"><div class="brand"><span class="tallyLogo"><i></i><i></i><i></i><i></i></span>Counts</div><span class="muted small">${esc(p.major||p.cls||"")}</span></div>
   ${hero}
   <section class="panel">
     <h3>${total?`${total} ${total===1?"story":"stories"} counted`:"Nothing counted yet"}</h3>
     ${total?sorted.map(k=>`<div class="tallyRow"><span>${esc(k)}</span>${tallyHTML(c[k])}</div>`).join(""):`<p class="muted">Your first answer starts the tally.</p>`}
   </section>
   ${g.length?`<section class="panel">
-    <h3>Not caught yet for ${esc(p.field)}</h3>
+    <h3>Not caught yet for ${esc(majorLabel())}</h3>
     <p class="muted small">Not a failing. Just skills your stories haven't shown yet, and where at ASU to build them.</p>
     ${g.slice(0,2).map(k=>{const r=resourcesFor(k)[0];return `<div class="story"><span class="skillTag gap">${esc(k)}</span>${r?`<p class="small">Try <b>${esc(r.name)}</b>. ${esc(r.what)}</p>`:""}</div>`;}).join("")}
     <button class="btn ghost" data-go="resources">See all my ASU resources</button>
@@ -317,7 +340,8 @@ V.catch=()=>{
   const sr=window.SpeechRecognition||window.webkitSpeechRecognition;
   return `
   <h2>Catch it</h2>
-  <p class="prompt">${esc(tmp.prompt||(tmp.prompt=todayPrompt()))}</p>
+  <div class="seg" style="margin-top:10px"><button class="btn ghost" data-mode="class" aria-pressed="${tmp.mode==="class"}">After class</button><button class="btn ghost" data-mode="shift" aria-pressed="${tmp.mode==="shift"}">After a shift</button><button class="btn ghost" data-go="unpaid">Life</button></div>
+  <p class="prompt">${esc(tmp.prompt||(tmp.prompt=todayPrompt(tmp.mode)))}</p>
   ${sr?`<button class="mic ${tmp.listening?"live":""}" data-act="mic" aria-label="${tmp.listening?"Stop recording":"Start recording"}" aria-pressed="${!!tmp.listening}">
      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
    </button><p class="muted small" style="text-align:center">${tmp.listening?"Listening. Tap to stop.":"Tap and talk, or type below."}</p>`:`<p class="notice">Voice isn't available in this browser, so type it for now.</p>`}
@@ -334,6 +358,7 @@ function resultHTML(r,text){
     <h3>What you said</h3><div class="said">${esc(text)}</div>
     <h3 style="margin-top:16px">What it shows</h3>
     <div class="pair">${r.skills.map(s=>`<div><span class="skillTag">${esc(s.name)}</span><div class="small muted">Because you said, "${esc(s.quote)}"</div></div>`).join("")}</div>
+    ${(r.terms&&r.terms.length)?`<h3 style="margin-top:16px">Named in your words</h3><div>${r.terms.map(t=>`<span class="skillTag gap">${esc(t)}</span>`).join("")}</div><p class="small muted">Specific techniques and tools you said. These go on your resume exactly as you named them.</p>`:""}
     <h3 style="margin-top:16px">Resume line draft</h3><p class="resumeLine">${esc(r.resumeLine)}</p>
     <h3 style="margin-top:16px">Interview story draft</h3><p>${esc(r.interviewStory)}</p>
     <p class="small muted">${r.engine==="claude"?"Drafted by Claude from your words only. Nothing added that you didn't say.":"Offline draft. Skills matched to your own sentences."}</p>
@@ -344,7 +369,7 @@ function resultHTML(r,text){
 V.bank=()=>{
   const c=skillCounts(),keys=Object.keys(c).sort(),f=tmp.filter||"";
   const list=state.stories.filter(s=>!f||(s.skills||[]).some(k=>k.name===f)).slice().sort((a,b)=>b.date-a.date);
-  const label=s=>s.source==="manager"?"From "+esc(s.from||"manager"):s.source==="unpaid"?"Unpaid work":"After a shift";
+  const label=s=>s.source==="manager"?"From "+esc(s.from||"manager"):s.source==="unpaid"?"Life and unpaid work":s.source==="class"?"After class":"After a shift";
   return `<h2>Story bank</h2>
   <p class="muted">Every story keeps your original words next to the skill language.</p>
   ${keys.length?`<label for="flt">Show stories for</label><select id="flt"><option value="">All skills</option>${keys.map(k=>`<option ${k===f?"selected":""}>${esc(k)}</option>`).join("")}</select>`:""}
@@ -352,14 +377,14 @@ V.bank=()=>{
   ${list.length?list.map(s=>`<article class="story">
       <div class="src">${label(s)} on ${fmtDate(s.date)}</div>
       <div class="said" style="margin:8px 0">${esc(s.original)}</div>
-      <div>${(s.skills||[]).map(k=>`<span class="skillTag">${esc(k.name)}</span>`).join("")}</div>
+      <div>${(s.skills||[]).map(k=>`<span class="skillTag">${esc(k.name)}</span>`).join("")}${(s.terms||[]).map(t=>`<span class="skillTag gap">${esc(t)}</span>`).join("")}</div>
       <p class="small"><b>Line.</b> ${esc(s.resumeLine||"")}</p>
       ${s.peer?`<div class="peer"><b>A classmate heard</b> ${s.peer.skills.map(esc).join(", ")}${s.peer.note?`. "${esc(s.peer.note)}"`:""}</div>`:""}
       <div class="row" style="margin-top:8px">
         ${s.peer?"":`<button class="btn ghost small" data-swap="${s.id}" style="padding:6px 12px">Swap with a classmate</button>`}
         <button class="btn ghost small" data-del="${s.id}" style="padding:6px 12px">Remove</button>
       </div>
-    </article>`).join(""):`<div class="empty"><p>No stories yet.</p><button class="btn gold" data-go="${works()?"catch":"unpaid"}">Count your first one</button></div>`}
+    </article>`).join(""):`<div class="empty"><p>No stories yet.</p><button class="btn gold" data-go="catch">Count your first one</button></div>`}
   </section>`;
 };
 
@@ -385,8 +410,8 @@ V.resources=()=>{
   const open=rest.filter(eligible);
   const bring=state.stories.slice().sort((a,b)=>(b.skills||[]).length-(a.skills||[]).length).slice(0,3);
   return `<h2>Your ASU resources</h2>
-  <p class="muted">Picked from the gaps in your stories for ${esc(state.profile.field)}. Tap "I went" after you go.</p>
-  ${gapCards?`<section class="panel">${gapCards}</section>`:`<section class="panel"><p>Your stories cover every core skill for ${esc(state.profile.field)}. Nice. Everything else is below.</p></section>`}
+  <p class="muted">Picked from the gaps in your stories for ${esc(majorLabel())}. Tap "I went" after you go.</p>
+  ${gapCards?`<section class="panel">${gapCards}</section>`:`<section class="panel"><p>Your stories cover every core skill for ${esc(majorLabel())}. Nice. Everything else is below.</p></section>`}
   ${bring.length?`<section class="panel"><h3>Bring these to your appointment</h3><p class="small muted">Walk in with real stories instead of starting from zero.</p>${bring.map(s=>`<div class="said" style="margin:8px 0">${esc(s.original)}</div>`).join("")}</section>`:""}
   ${open.length?`<section class="panel"><h3>Also open to you</h3>${open.map(r=>resCard(r)).join("")}</section>`:""}
   ${locked.length?`<section class="panel"><h3>Unlocks with an ASU job</h3>${locked.map(r=>`<div class="res"><b>${esc(r.name)}</b><div class="who">For ${esc(r.who)}.</div></div>`).join("")}</section>`:""}
@@ -458,13 +483,18 @@ V.insights=()=>{
   if(me){students+=1;stories+=state.stories.length;Object.entries(skillCounts()).forEach(([k,v])=>{skills[k]=(skills[k]||0)+v;});}
   const visits={...base.visits};if(me)Object.keys(state.visits).forEach(k=>{visits[k]=(visits[k]||0)+1;});
   const max=Math.max(...Object.values(skills));
+  const visitsTotal=Object.values(visits).reduce((a,b)=>a+b,0),suggestedTotal=Object.values(base.suggested).reduce((a,b)=>a+b,0);
   const sortedSkills=Object.entries(skills).sort((a,b)=>b[1]-a[1]);
   const low=sortedSkills.slice(-3).map(x=>x[0]);
   return `<button class="switch" data-go="home">Back to my Counts</button>
   <h2>${esc((state.profile&&state.profile.cls)||"Intro class")} insights</h2>
   <p class="muted">What an instructor or ASU office sees. Totals only. No names, no stories.</p>
   <p class="notice">Sample class numbers for this demo${me?", plus your own counts":""}.</p>
-  <div class="stats"><div class="stat"><b>${students}</b><span class="small">students</span></div><div class="stat"><b>${stories}</b><span class="small">stories</span></div><div class="stat"><b>${base.unpaidShare}%</b><span class="small">unpaid work</span></div></div>
+  <div class="stats"><div class="stat"><b>${students}</b><span class="small">students</span></div><div class="stat"><b>${stories}</b><span class="small">stories</span></div><div class="stat"><b>${Math.round(visitsTotal/suggestedTotal*100)}%</b><span class="small">went to a resource</span></div></div>
+  <section class="panel"><h3>Where stories come from</h3>
+    ${[["Learning",46],["Work",31],["Life and unpaid work",23]].map(([k,v])=>`<div style="margin:8px 0"><div class="metric"><span>${k}</span><span class="muted">${v}%</span></div><div class="bar"><span style="width:${v}%"></span></div></div>`).join("")}
+    <p class="small muted">Work, learning, and life, the three places the challenge asks us to look.</p>
+  </section>
   <section class="panel"><h3>Skills this class is building</h3>
     ${sortedSkills.map(([k,v])=>`<div style="margin:8px 0"><div class="metric"><span>${esc(k)}</span><span class="muted">${v}</span></div><div class="bar"><span style="width:${Math.round(v/max*100)}%"></span></div></div>`).join("")}
   </section>
@@ -478,7 +508,7 @@ V.insights=()=>{
 };
 
 // ---------- render
-const TABS=[["home","Today"],["bank","Bank"],["resources","ASU"],["apply","Deadline"],["catch","Catch"]];
+const TABS=[["home","Home"],["catch","Catch"],["bank","Bank"],["resources","ASU"],["apply","Deadline"]];
 const PARENT={manager:"home",unpaid:"home",swap:"bank",insights:"home"};
 function render(){
   document.getElementById("app").innerHTML=V[view]();
@@ -486,7 +516,7 @@ function render(){
   const cur=PARENT[view]||view;
   document.getElementById("tabs").innerHTML=TABS.map(([k,l])=>`<button data-go="${k}" ${cur===k?'aria-current="page"':""}>${l}</button>`).join("");
 }
-function go(v){if(v==="catch"&&!works()){v="unpaid";}stopMic();if(v!==view&&v!=="swap"){const keep={};tmp=keep;}view=v;render();window.scrollTo(0,0);}
+function go(v,mode){stopMic();if(v!==view&&v!=="swap"){tmp={};}if(v==="catch"){tmp.mode=mode||tmp.mode||"class";if(mode)tmp.prompt=null;}view=v;render();window.scrollTo(0,0);}
 
 let rec=null;
 function stopMic(){if(rec){try{rec.stop();}catch(e){}rec=null;}tmp.listening=false;}
@@ -512,6 +542,9 @@ document.addEventListener("change",e=>{if(e.target.id==="flt"){tmp.filter=e.targ
 document.addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.go){go(b.dataset.go);return;}
+  if(b.dataset.catch){go("catch",b.dataset.catch);return;}
+  if(b.dataset.home){tmp.homeMode=b.dataset.home;tmp.push=false;render();return;}
+  if(b.dataset.mode){tmp.mode=b.dataset.mode;tmp.prompt=null;tmp.result=null;render();return;}
   if(b.dataset.work){tmp.work=b.dataset.work;document.querySelectorAll("#pw button").forEach(x=>x.setAttribute("aria-pressed",x===b));document.getElementById("jobWrap").hidden=tmp.work==="none";return;}
   if(b.dataset.visit){state.visits[b.dataset.visit]=Date.now();save();render();return;}
   if(b.dataset.del){state.stories=state.stories.filter(s=>s.id!==b.dataset.del);save();render();return;}
@@ -524,20 +557,20 @@ document.addEventListener("click",async e=>{
     if(!name){alert("Add your first name to start.");return;}
     if(!tmp.work){alert("Pick whether you work right now.");return;}
     if(tmp.work!=="none"&&!job){alert("Add where you work.");return;}
-    state.profile={name,cls:document.getElementById("pc").value.trim()||"Intro class",work:tmp.work,job:tmp.work==="none"?"":job,field:document.getElementById("pf").value,share:document.getElementById("share").checked};
+    state.profile={name,cls:document.getElementById("pc").value.trim()||"Intro class",work:tmp.work,job:tmp.work==="none"?"":job,major:document.getElementById("pm").value.trim(),field:document.getElementById("pf").value,share:document.getElementById("share").checked};
     save();go("home");
   }
   if(act==="demo"){seedDemo();go("home");}
   if(act==="push"){tmp.push=!tmp.push;render();}
   if(act==="gotjob"){const j=prompt("Where do you work?");if(j&&j.trim()){const campus=confirm("Is it an ASU job? OK for yes, Cancel for off campus.");state.profile.work=campus?"campus":"off";state.profile.job=j.trim();save();render();}}
   if(act==="mic")toggleMic();
-  if(act==="newprompt"){const i=PROMPTS.indexOf(tmp.prompt);tmp.prompt=PROMPTS[(i+1)%PROMPTS.length];tmp.result=null;render();}
+  if(act==="newprompt"){const L=tmp.mode==="class"?CLASS_PROMPTS:PROMPTS;const i=L.indexOf(tmp.prompt);tmp.prompt=L[(i+1)%L.length];tmp.result=null;render();}
   if(act==="translate"){
     stopMic();const text=(tmp.text||"").trim();
     if(text.length<12){alert("Say or type a little more about what happened, at least a sentence.");return;}
-    tmp.busy=true;tmp.result=null;render();tmp.result=await translate(text,"shift");tmp.busy=false;render();
+    tmp.busy=true;tmp.result=null;render();tmp.result=await translate(text,tmp.mode==="class"?"class, lab, or project":"work shift");tmp.busy=false;render();
   }
-  if(act==="keep"){addStory("shift",tmp.text,tmp.result);go("home");}
+  if(act==="keep"){addStory(tmp.mode==="class"?"class":"shift",tmp.text,tmp.result);go("home");}
   if(act==="discard"){tmp={};render();}
   if(act==="mview"){tmp.mview=true;render();}
   if(act==="mback"){tmp.mview=false;render();}
@@ -566,7 +599,7 @@ document.addEventListener("click",async e=>{
   }
 });
 
-function addStory(source,original,r,from){state.stories.push({id:uid(),date:Date.now(),source,from:from||null,original,skills:r.skills,resumeLine:r.resumeLine,interviewStory:r.interviewStory});save();}
+function addStory(source,original,r,from){state.stories.push({id:uid(),date:Date.now(),source,from:from||null,original,skills:r.skills,terms:r.terms||[],resumeLine:r.resumeLine,interviewStory:r.interviewStory});save();}
 
 async function matchStories(post){
   const bank=state.stories.map((s,i)=>({i,original:s.original,skills:(s.skills||[]).map(k=>k.name)}));
@@ -594,14 +627,16 @@ ${JSON.stringify(bank).slice(0,8000)}`,{modelTier:"default"});
 
 function seedDemo(){
   const d=n=>Date.now()-n*86400000;
-  state.profile={name:"Sam",cls:"ASU101-FALL",work:"campus",job:"Campus library front desk",field:"Business",share:true};
+  state.profile={name:"Sam",cls:"ASU101-FALL",work:"campus",job:"Campus library front desk",major:"Business Administration",field:"Business",share:true};
   state.visits={};
   state.stories=[
+    {id:uid(),date:d(50),source:"class",original:"Our group project for my marketing class fell apart because nobody agreed on the survey. I set up a quick vote, split the questions between us, and we turned it in on time.",skills:[{name:"Leadership",quote:"I set up a quick vote"},{name:"Teamwork",quote:"split the questions between us"},{name:"Conflict resolution",quote:"nobody agreed on the survey"}],resumeLine:"Organized a stalled class project team by running a vote and dividing the survey work, meeting the deadline.",interviewStory:"In my marketing class our group couldn't agree on the survey. I set up a quick vote and split the questions between us. We turned it in on time."},
+    {id:uid(),date:d(9),source:"class",original:"I had to redo my whole spreadsheet for accounting because the formulas broke. I figured out which cells were wrong and explained the fix to two people in my section.",skills:[{name:"Problem solving",quote:"I figured out which cells were wrong"},{name:"Technical skills",quote:"redo my whole spreadsheet"},{name:"Communication",quote:"explained the fix to two people in my section"}],terms:["spreadsheet formulas"],resumeLine:"Rebuilt a broken accounting spreadsheet and explained the fix to classmates.",interviewStory:"My accounting spreadsheet broke and I had to redo it. I tracked down which cells were wrong and fixed them, then showed two classmates the fix. [add how it turned out]"},
     {id:uid(),date:d(60),source:"unpaid",original:"I translate for my mom at the doctor and fill out all the insurance forms for my family.",skills:[{name:"Communication",quote:"I translate for my mom at the doctor"},{name:"Responsibility",quote:"fill out all the insurance forms for my family"}],resumeLine:"Serve as family interpreter in medical settings and manage household insurance paperwork.",interviewStory:"I translate for my mom at doctor visits and I handle our family's insurance forms. [add how it turned out]"},
     {id:uid(),date:d(40),source:"shift",original:"A student was really upset because his hold had expired and he needed the book for an exam tomorrow. I calmed him down, checked the other campus, and got it transferred for the morning.",skills:[{name:"Conflict resolution",quote:"I calmed him down"},{name:"Problem solving",quote:"checked the other campus, and got it transferred for the morning"}],resumeLine:"Resolved an upset patron's expired hold by locating the item at another campus and arranging a next morning transfer.",interviewStory:"A student came to the desk upset because his hold expired before an exam. I calmed him down and checked the other campus. I got the book transferred for the morning so he had it in time.",peer:{skills:["Conflict resolution","Customer service"],note:"You stayed way calmer than I would have."}},
     {id:uid(),date:d(32),source:"shift",original:"Two people called out so it was just me and one new person during finals week. I showed her how to do checkouts while I handled the line.",skills:[{name:"Training others",quote:"I showed her how to do checkouts"},{name:"Adaptability",quote:"Two people called out"},{name:"Time management",quote:"while I handled the line"}],resumeLine:"Trained a new coworker on checkouts while managing the service line during a short staffed finals week shift.",interviewStory:"During finals week two people called out, leaving me with one new hire. I showed her checkouts while I kept the line moving. [add how it turned out]"},
     {id:uid(),date:d(21),source:"manager",from:"Dana, desk supervisor",original:"Sam is the person I trust to close alone. The drawer is always right and nothing gets left undone.",skills:[{name:"Responsibility",quote:"the person I trust to close alone"},{name:"Attention to detail",quote:"The drawer is always right"}],resumeLine:"Trusted by supervisor to close the desk independently with accurate cash drawer reconciliation.",interviewStory:"My supervisor trusts me to close alone. I make sure the drawer is right and nothing is left undone."},
-    {id:uid(),date:d(4),source:"shift",original:"The printer system went down and a line formed. I figured out it was the queue, restarted it, and told everyone waiting what was happening.",skills:[{name:"Problem solving",quote:"I figured out it was the queue, restarted it"},{name:"Communication",quote:"told everyone waiting what was happening"},{name:"Technical skills",quote:"restarted it"}],resumeLine:"Diagnosed and restarted a failed print queue while keeping waiting patrons informed.",interviewStory:"The printer system went down and a line formed. I figured out it was the queue and restarted it, and I told everyone waiting what was going on. [add how it turned out]"}
+    {id:uid(),date:d(4),source:"shift",original:"The printer system went down and a line formed. I figured out it was the queue, restarted it, and told everyone waiting what was happening.",skills:[{name:"Problem solving",quote:"I figured out it was the queue, restarted it"},{name:"Communication",quote:"told everyone waiting what was happening"},{name:"Technical skills",quote:"restarted it"}],terms:["print queue"],resumeLine:"Diagnosed and restarted a failed print queue while keeping waiting patrons informed.",interviewStory:"The printer system went down and a line formed. I figured out it was the queue and restarted it, and I told everyone waiting what was going on. [add how it turned out]"}
   ];
   save();
 }
