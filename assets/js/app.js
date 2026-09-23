@@ -64,6 +64,12 @@ document.addEventListener("click",async e=>{
     save();go("home");
   }
   if(act==="demo"){seedDemo();go("home");}
+  if(act==="reset"){
+    if(confirm("Log out and start fresh? Everything saved in this browser, including your stories, will be deleted.")){
+      try{localStorage.removeItem(KEY);}catch(e){}
+      state={profile:null,stories:[],visits:{}};tmp={};go("welcome");
+    }
+  }
   if(act==="push"){tmp.push=!tmp.push;render();}
   if(act==="gotjob"){const j=prompt("Where do you work?");if(j&&j.trim()){const campus=confirm("Is it an ASU job? OK for yes, Cancel for off campus.");state.profile.work=campus?"campus":"off";state.profile.job=j.trim();save();render();}}
   if(act==="mic")toggleMic();

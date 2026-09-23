@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.1
+- Log out and start fresh, in the header and at the foot of Home. Clears
+  everything saved in that browser and returns to setup. Useful when a demo
+  needs a clean slate.
+
 ## v4
 - Optional category chips on capture (Class, Work, Club, Volunteer, Caregiving, Life)
 - "Counts noticed": every suggested skill now explains why it was identified

@@ -51,7 +51,7 @@ V.home=()=>{
   ${tmp.push?`<button class="pushcard" data-catch="${mode}"><span class="pushicon"><span class="tallyLogo" style="height:16px"><i style="background:#fff"></i><i style="background:#fff"></i><i style="background:#fff"></i></span></span><span><b>Counts</b><br><span class="small">${pushText} ${esc(todayPrompt(mode))} Tap to answer out loud.</span></span></button>`:""}
   ${works()?"":`<p class="small muted" style="margin:10px 2px">Start a job later? <button class="switch" data-act="gotjob">Turn on shift questions</button></p>`}`;
   return `
-  <div class="top"><div class="brand"><span class="tallyLogo"><i></i><i></i><i></i><i></i></span>Counts</div><span class="muted small">${esc(p.major||p.cls||"")}</span></div>
+  <div class="top"><div class="brand"><span class="tallyLogo"><i></i><i></i><i></i><i></i></span>Counts</div><div class="row" style="gap:10px;align-items:center"><span class="muted small">${esc(p.major||p.cls||"")}</span><button class="btn ghost small" style="padding:6px 12px" data-act="reset">Log out</button></div></div>
   ${hero}
   ${journeyHTML(total?"Evidence":"Experience")}
   <section class="panel">
@@ -70,7 +70,10 @@ V.home=()=>{
     <div class="story"><p><b>Unpaid work counts too.</b> Caregiving, translating for family, the family shop, high school jobs.</p><button class="btn ghost" data-go="unpaid">Does this count?</button></div>
     <div class="story"><p><b>Swap with a classmate.</b> Trade one story. They write down the skills they hear.</p><button class="btn ghost" data-go="bank">Pick a story to swap</button></div>
   </section>
-  <button class="switch" data-go="insights">Instructor and ASU view</button>`;
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <button class="switch" data-go="insights">Instructor and ASU view</button>
+    <button class="switch" data-act="reset" style="color:var(--soft)">Log out and start fresh</button>
+  </div>`;
 };
 
 V.catch=()=>{
